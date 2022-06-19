@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"runtime"
 	"strings"
 
@@ -80,6 +81,7 @@ type Adapter struct {
 	dbSpecified    bool
 	db             *gorm.DB
 	isFiltered     bool
+	customTable    interface{}
 }
 
 // finalizer is the destructor for Adapter.
@@ -194,6 +196,7 @@ func NewAdapterByDBUseTableName(db *gorm.DB, prefix string, tableName string) (*
 	a := &Adapter{
 		tablePrefix: prefix,
 		tableName:   tableName,
+		customTable: db.Statement.Context.Value(customTableKey{}),
 	}
 
 	a.db = db.Scopes(a.casbinRuleTable()).Session(&gorm.Session{Context: db.Statement.Context})
@@ -264,6 +267,18 @@ func TurnOffAutoMigrate(db *gorm.DB) *gorm.DB {
 }
 
 func NewAdapterByDBWithCustomTable(db *gorm.DB, t interface{}, tableName ...string) (*Adapter, error) {
+
+	r := reflect.ValueOf(t).Type()
+	if r.Kind() == reflect.Ptr {
+		r = r.Elem()
+	}
+	for _, field := range []string{"ID", "Ptype", "V0", "V1", "V2", "V3", "V4", "V5", "V6", "V7"} {
+		if _, ok := r.FieldByName(field); !ok {
+			panic(fmt.Sprintf("The custom table has no column named `%s`", field))
+			//return nil, errors.New(fmt.Sprintf("The custom table has no column named `%s`", field))
+		}
+	}
+
 	ctx := db.Statement.Context
 	if ctx == nil {
 		ctx = context.Background()
@@ -361,7 +376,15 @@ func (a *Adapter) Close() error {
 }
 
 // getTableInstance return the dynamic table name
-func (a *Adapter) getTableInstance() *CasbinRule {
+func (a *Adapter) getTableInstance() interface{} {
+	if a.customTable != nil {
+		return &a.customTable
+	} else {
+		return &CasbinRule{}
+	}
+}
+
+func (a *Adapter) newTableInstance() *CasbinRule {
 	return &CasbinRule{}
 }
 
@@ -514,7 +537,7 @@ func (a *Adapter) filterQuery(db *gorm.DB, filter Filter) func(db *gorm.DB) *gor
 }
 
 func (a *Adapter) savePolicyLine(ptype string, rule []string) CasbinRule {
-	line := a.getTableInstance()
+	line := a.newTableInstance()
 
 	line.Ptype = ptype
 	if len(rule) > 0 {
@@ -625,7 +648,7 @@ func (a *Adapter) RemovePolicies(sec string, ptype string, rules [][]string) err
 
 // RemoveFilteredPolicy removes policy rules that match the filter from the storage.
 func (a *Adapter) RemoveFilteredPolicy(sec string, ptype string, fieldIndex int, fieldValues ...string) error {
-	line := a.getTableInstance()
+	line := a.newTableInstance()
 
 	line.Ptype = ptype
 
@@ -784,7 +807,7 @@ func (a *Adapter) UpdatePolicies(sec string, ptype string, oldRules, newRules []
 
 func (a *Adapter) UpdateFilteredPolicies(sec string, ptype string, newPolicies [][]string, fieldIndex int, fieldValues ...string) ([][]string, error) {
 	// UpdateFilteredPolicies deletes old rules and adds new rules.
-	line := a.getTableInstance()
+	line := a.newTableInstance()
 
 	line.Ptype = ptype
 	if fieldIndex <= 0 && 0 < fieldIndex+len(fieldValues) {
