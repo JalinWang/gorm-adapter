@@ -255,6 +255,59 @@ func initAdapterWithGormInstanceByPrefixAndName(t *testing.T, db *gorm.DB, prefi
 	return a
 }
 
+func TestSoftDelete(t *testing.T) {
+	type TestCasbinRule struct {
+		CasbinRule
+		DeletedAt gorm.DeletedAt
+		//CreatedAt  time.Time
+	}
+
+	db, _ := gorm.Open(mysql.Open("root:@tcp(127.0.0.1:3306)/casbin"), &gorm.Config{})
+
+	a, _ := NewAdapterByDBWithCustomTable(db, &TestCasbinRule{}, "casbin_create_custom")
+
+	e, err := casbin.NewEnforcer("examples/rbac_model.conf", "examples/rbac_policy.csv")
+	if err != nil {
+		panic(err)
+	}
+
+	err = a.SavePolicy(e.GetModel())
+	if err != nil {
+		panic(err)
+	}
+
+	// Clear the current policy.
+	e.ClearPolicy()
+	testGetPolicy(t, e, [][]string{})
+
+	// Load the policy from DB.
+	err = a.LoadPolicy(e.GetModel())
+	if err != nil {
+		panic(err)
+	}
+	testGetPolicy(t, e, [][]string{
+		{"alice", "data1", "read"},
+		{"bob", "data2", "write"},
+		{"data2_admin", "data2", "read"},
+		{"data2_admin", "data2", "write"},
+	})
+
+	a.AddPolicy("p", "p", []string{"Carol", "data1", "read"})
+	a.RemovePolicy("p", "p", []string{"Carol", "data1", "read"})
+
+	e.ClearPolicy()
+	a.LoadPolicy(e.GetModel())
+	log.Println("Policies after deletion: ", e.GetPolicy())
+
+	testGetPolicy(t, e, [][]string{
+		{"alice", "data1", "read"},
+		{"bob", "data2", "write"},
+		{"data2_admin", "data2", "read"},
+		{"data2_admin", "data2", "write"},
+		//{"Carol", "data1", "read"},
+	})
+}
+
 func TestNilField(t *testing.T) {
 	a, err := NewAdapter("sqlite3", "test.db")
 	assert.Nil(t, err)
