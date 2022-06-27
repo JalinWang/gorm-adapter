@@ -947,11 +947,9 @@ func (a *Adapter) UpdateFilteredPolicies(sec string, ptype string, newPolicies [
 		tx.Rollback()
 		return nil, err
 	}
-	for i := range newP {
-		if err := a.customizedDBCreate(tx, &newP[i]); err != nil {
-			tx.Rollback()
-			return nil, err
-		}
+	if err := a.customizedDBCreateMany(tx, &newP); err != nil {
+		tx.Rollback()
+		return nil, err
 	}
 
 	// return deleted rulues
