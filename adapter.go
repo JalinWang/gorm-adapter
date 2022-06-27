@@ -436,7 +436,7 @@ func convertToTableCustomized(t interface{}, lines *[]CasbinRule) interface{} {
 	return cusLines.Interface()
 }
 
-func (a *Adapter) dbDelete(db *gorm.DB, conds ...interface{}) error {
+func (a *Adapter) customizedDBDelete(db *gorm.DB, conds ...interface{}) error {
 	if a.customTable == nil {
 		return db.Delete(&CasbinRule{}, conds...).Error
 	}
@@ -444,7 +444,7 @@ func (a *Adapter) dbDelete(db *gorm.DB, conds ...interface{}) error {
 	return db.Delete(a.customTable, conds...).Error
 }
 
-func (a *Adapter) dbFind(db *gorm.DB, linesPtr *[]CasbinRule, conds ...interface{}) error {
+func (a *Adapter) customizedDBFind(db *gorm.DB, linesPtr *[]CasbinRule, conds ...interface{}) error {
 	if a.customTable == nil {
 		return db.Find(linesPtr, conds...).Error
 	}
@@ -465,7 +465,7 @@ func (a *Adapter) dbFind(db *gorm.DB, linesPtr *[]CasbinRule, conds ...interface
 	return nil
 }
 
-func (a *Adapter) dbCreate(db *gorm.DB, linePtr *CasbinRule) error {
+func (a *Adapter) customizedDBCreate(db *gorm.DB, linePtr *CasbinRule) error {
 	if a.customTable == nil {
 		return db.Create(linePtr).Error
 	}
@@ -474,7 +474,7 @@ func (a *Adapter) dbCreate(db *gorm.DB, linePtr *CasbinRule) error {
 	return db.Create(lines).Error
 }
 
-func (a *Adapter) dbCreateMany(db *gorm.DB, linesPtr *[]CasbinRule) error {
+func (a *Adapter) customizedDBCreateMany(db *gorm.DB, linesPtr *[]CasbinRule) error {
 	if a.customTable == nil {
 		return db.Create(linesPtr).Error
 	}
@@ -560,7 +560,7 @@ func loadPolicyLine(line CasbinRule, model model.Model) {
 // LoadPolicy loads policy from database.
 func (a *Adapter) LoadPolicy(model model.Model) error {
 	var lines []CasbinRule
-	if err := a.dbFind(a.db.Order("ID"), &lines); err != nil {
+	if err := a.customizedDBFind(a.db.Order("ID"), &lines); err != nil {
 		return err
 	}
 
@@ -580,7 +580,7 @@ func (a *Adapter) LoadFilteredPolicy(model model.Model, filter interface{}) erro
 		return errors.New("invalid filter type")
 	}
 
-	if err := a.dbFind(a.db.Scopes(a.filterQuery(a.db, filterValue)).Order("ID"), &lines); err != nil {
+	if err := a.customizedDBFind(a.db.Scopes(a.filterQuery(a.db, filterValue)).Order("ID"), &lines); err != nil {
 		return err
 	}
 
@@ -676,7 +676,7 @@ func (a *Adapter) SavePolicy(model model.Model) error {
 		for _, rule := range ast.Policy {
 			lines = append(lines, a.savePolicyLine(ptype, rule))
 			if len(lines) > flushEvery {
-				if err := a.dbCreateMany(a.db, &lines); err != nil {
+				if err := a.customizedDBCreateMany(a.db, &lines); err != nil {
 					return err
 				}
 				lines = nil
@@ -688,7 +688,7 @@ func (a *Adapter) SavePolicy(model model.Model) error {
 		for _, rule := range ast.Policy {
 			lines = append(lines, a.savePolicyLine(ptype, rule))
 			if len(lines) > flushEvery {
-				if err := a.dbCreateMany(a.db, &lines); err != nil {
+				if err := a.customizedDBCreateMany(a.db, &lines); err != nil {
 					return err
 				}
 				lines = nil
@@ -696,7 +696,7 @@ func (a *Adapter) SavePolicy(model model.Model) error {
 		}
 	}
 	if len(lines) > 0 {
-		if err := a.dbCreateMany(a.db, &lines); err != nil {
+		if err := a.customizedDBCreateMany(a.db, &lines); err != nil {
 			return err
 		}
 	}
@@ -707,7 +707,7 @@ func (a *Adapter) SavePolicy(model model.Model) error {
 // AddPolicy adds a policy rule to the storage.
 func (a *Adapter) AddPolicy(sec string, ptype string, rule []string) error {
 	line := a.savePolicyLine(ptype, rule)
-	err := a.dbCreate(a.db, &line)
+	err := a.customizedDBCreate(a.db, &line)
 	return err
 }
 
@@ -725,7 +725,7 @@ func (a *Adapter) AddPolicies(sec string, ptype string, rules [][]string) error 
 		line := a.savePolicyLine(ptype, rule)
 		lines = append(lines, line)
 	}
-	return a.dbCreateMany(a.db, &lines)
+	return a.customizedDBCreateMany(a.db, &lines)
 }
 
 // RemovePolicies removes multiple policy rules from the storage.
@@ -832,7 +832,7 @@ func (a *Adapter) rawDelete(db *gorm.DB, line CasbinRule) error {
 	}
 	args := append([]interface{}{queryStr}, queryArgs...)
 
-	return a.dbDelete(db, args...)
+	return a.customizedDBDelete(db, args...)
 }
 
 func appendWhere(line CasbinRule) (string, []interface{}) {
@@ -939,16 +939,16 @@ func (a *Adapter) UpdateFilteredPolicies(sec string, ptype string, newPolicies [
 	tx := a.db.Begin()
 	str, args := line.queryString()
 
-	if err := a.dbFind(tx.Where(str, args...), &oldP); err != nil {
+	if err := a.customizedDBFind(tx.Where(str, args...), &oldP); err != nil {
 		tx.Rollback()
 		return nil, err
 	}
-	if err := a.dbDelete(tx.Where(str, args...)); err != nil {
+	if err := a.customizedDBDelete(tx.Where(str, args...)); err != nil {
 		tx.Rollback()
 		return nil, err
 	}
 	for i := range newP {
-		if err := a.dbCreate(tx, &newP[i]); err != nil {
+		if err := a.customizedDBCreate(tx, &newP[i]); err != nil {
 			tx.Rollback()
 			return nil, err
 		}
