@@ -264,7 +264,7 @@ func TestSoftDelete(t *testing.T) {
 	}
 
 	// Start preparing
-	db, err := gorm.Open(mysql.Open("root:@tcp(127.0.0.1:3306)/casbin"), &gorm.Config{})
+	db, err := gorm.Open(mysql.Open("root:@tcp(127.0.0.1:3306)/casbin?parseTime=true"), &gorm.Config{})
 	if err != nil {
 		panic(err)
 	}
@@ -303,6 +303,12 @@ func TestSoftDelete(t *testing.T) {
 		{"data2_admin", "data2", "write"},
 		{"carol", "data1", "read"},
 	})
+
+	res := TestCasbinRule{}
+	err = a.db.Unscoped().Find(&res, "ptype = ? and v0 = ? and v1 = ? and v2 = ?", "p", "bob", "data2", "write").Error
+	assert.Nil(t, err)
+	assert.NotNil(t, res.DeletedAt)
+	log.Print("SoftDeletedRecord: ", res)
 
 	// Test LoadFilteredPolicy
 	e.ClearPolicy()
