@@ -274,8 +274,7 @@ func NewAdapterByDBWithCustomTable(db *gorm.DB, t interface{}, tableName ...stri
 	}
 	for _, field := range []string{"ID", "Ptype", "V0", "V1", "V2", "V3", "V4", "V5", "V6", "V7"} {
 		if _, ok := r.FieldByName(field); !ok {
-			panic(fmt.Sprintf("The custom table has no column named `%s`", field))
-			//return nil, errors.New(fmt.Sprintf("The custom table has no column named `%s`", field))
+			return nil, errors.New(fmt.Sprintf("The custom table has no column named `%s`", field))
 		}
 	}
 
@@ -438,30 +437,49 @@ func convertToTableCustomized(t interface{}, lines *[]CasbinRule) interface{} {
 }
 
 func (a *Adapter) dbDelete(db *gorm.DB, conds ...interface{}) error {
-	return db.Delete(a.getTableObject(), conds...).Error
+	if a.customTable == nil {
+		return db.Delete(&CasbinRule{}, conds...).Error
+	}
+
+	return db.Delete(a.customTable, conds...).Error
 }
 
 func (a *Adapter) dbFind(db *gorm.DB, linesPtr *[]CasbinRule, conds ...interface{}) error {
-	modelType := reflect.TypeOf(a.getTableObject())
+	if a.customTable == nil {
+		return db.Find(linesPtr, conds...).Error
+	}
+
+	modelType := reflect.TypeOf(a.customTable)
 	if modelType.Kind() == reflect.Ptr {
 		modelType = modelType.Elem()
 	}
 	cusLinesPtr := reflect.New(reflect.SliceOf(modelType)).Interface()
 
 	err := db.Find(cusLinesPtr, conds...).Error
+	if err != nil {
+		return err
+	}
 
 	*linesPtr = *convertToTableDefault(cusLinesPtr)
 
-	return err
+	return nil
 }
 
 func (a *Adapter) dbCreate(db *gorm.DB, linePtr *CasbinRule) error {
-	lines := convertToTableCustomized(a.getTableObject(), &[]CasbinRule{*linePtr})
+	if a.customTable == nil {
+		return db.Create(linePtr).Error
+	}
+
+	lines := convertToTableCustomized(a.customTable, &[]CasbinRule{*linePtr})
 	return db.Create(lines).Error
 }
 
 func (a *Adapter) dbCreateMany(db *gorm.DB, linesPtr *[]CasbinRule) error {
-	lines := convertToTableCustomized(a.getTableObject(), linesPtr)
+	if a.customTable == nil {
+		return db.Create(linesPtr).Error
+	}
+
+	lines := convertToTableCustomized(a.customTable, linesPtr)
 	return db.Create(lines).Error
 }
 
@@ -562,7 +580,7 @@ func (a *Adapter) LoadFilteredPolicy(model model.Model, filter interface{}) erro
 		return errors.New("invalid filter type")
 	}
 
-	if err := a.db.Scopes(a.filterQuery(a.db, filterValue)).Order("ID").Find(&lines).Error; err != nil {
+	if err := a.dbFind(a.db.Scopes(a.filterQuery(a.db, filterValue)).Order("ID"), &lines); err != nil {
 		return err
 	}
 
@@ -922,7 +940,8 @@ func (a *Adapter) UpdateFilteredPolicies(sec string, ptype string, newPolicies [
 
 	for i := range newP {
 		str, args := line.queryString()
-		if err := tx.Where(str, args...).Find(&oldP).Error; err != nil {
+
+		if err := a.dbFind(tx.Where(str, args...), &oldP); err != nil {
 			tx.Rollback()
 			return nil, err
 		}

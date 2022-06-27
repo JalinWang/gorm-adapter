@@ -111,6 +111,7 @@ func initPolicy(t *testing.T, a *Adapter) {
 	if err != nil {
 		panic(err)
 	}
+	fmt.Println(e.GetPolicy())
 	testGetPolicy(t, e, [][]string{{"alice", "data1", "read"}, {"bob", "data2", "write"}, {"data2_admin", "data2", "read"}, {"data2_admin", "data2", "write"}})
 }
 
@@ -262,49 +263,69 @@ func TestSoftDelete(t *testing.T) {
 		//CreatedAt  time.Time
 	}
 
-	db, _ := gorm.Open(mysql.Open("root:@tcp(127.0.0.1:3306)/casbin"), &gorm.Config{})
-
-	a, _ := NewAdapterByDBWithCustomTable(db, &TestCasbinRule{}, "casbin_create_custom")
-
-	e, err := casbin.NewEnforcer("examples/rbac_model.conf", "examples/rbac_policy.csv")
+	// Start preparing
+	db, err := gorm.Open(mysql.Open("root:@tcp(127.0.0.1:3306)/casbin"), &gorm.Config{})
 	if err != nil {
 		panic(err)
 	}
 
-	err = a.SavePolicy(e.GetModel())
+	a, err := NewAdapterByDBWithCustomTable(db, &TestCasbinRule{}, "casbin_create_custom")
 	if err != nil {
 		panic(err)
 	}
 
-	// Clear the current policy.
+	initPolicy(t, a)
+
+	e, err := casbin.NewEnforcer("examples/rbac_model.conf", a)
+	if err != nil {
+		panic(err)
+	}
+	e.EnableAutoSave(true)
+	// End of preparation.
+
+	// Test Add & delete policy
+	ok, err := e.AddPolicy("carol", "data1", "read")
+	assert.Nil(t, err)
+	assert.Equal(t, ok, true)
+
+	ok, err = e.RemovePolicy("bob", "data2", "write")
+	assert.Nil(t, err)
+	assert.Equal(t, ok, true)
+
 	e.ClearPolicy()
-	testGetPolicy(t, e, [][]string{})
-
-	// Load the policy from DB.
 	err = a.LoadPolicy(e.GetModel())
-	if err != nil {
-		panic(err)
-	}
+	assert.Nil(t, err)
+
 	testGetPolicy(t, e, [][]string{
 		{"alice", "data1", "read"},
-		{"bob", "data2", "write"},
+		//{"bob", "data2", "write"},
 		{"data2_admin", "data2", "read"},
 		{"data2_admin", "data2", "write"},
+		{"carol", "data1", "read"},
 	})
 
-	a.AddPolicy("p", "p", []string{"Carol", "data1", "read"})
-	a.RemovePolicy("p", "p", []string{"Carol", "data1", "read"})
-
+	// Test LoadFilteredPolicy
 	e.ClearPolicy()
-	a.LoadPolicy(e.GetModel())
-	log.Println("Policies after deletion: ", e.GetPolicy())
+	err = a.LoadFilteredPolicy(e.GetModel(), Filter{
+		V0: []string{"bob", "alice", "carol"},
+	})
+	assert.Nil(t, err)
 
 	testGetPolicy(t, e, [][]string{
 		{"alice", "data1", "read"},
-		{"bob", "data2", "write"},
+		{"carol", "data1", "read"},
+	})
+
+	//Test Update
+	_, err = e.UpdateFilteredPolicies([][]string{{"alice", "data1", "write"}}, 0, "alice", "data1", "read")
+	assert.Nil(t, err)
+
+	e.LoadPolicy()
+	testGetPolicyWithoutOrder(t, e, [][]string{
+		{"alice", "data1", "write"},
 		{"data2_admin", "data2", "read"},
 		{"data2_admin", "data2", "write"},
-		//{"Carol", "data1", "read"},
+		{"carol", "data1", "read"},
 	})
 }
 
