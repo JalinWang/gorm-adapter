@@ -937,18 +937,17 @@ func (a *Adapter) UpdateFilteredPolicies(sec string, ptype string, newPolicies [
 	}
 
 	tx := a.db.Begin()
+	str, args := line.queryString()
 
+	if err := a.dbFind(tx.Where(str, args...), &oldP); err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+	if err := a.dbDelete(tx.Where(str, args...)); err != nil {
+		tx.Rollback()
+		return nil, err
+	}
 	for i := range newP {
-		str, args := line.queryString()
-
-		if err := a.dbFind(tx.Where(str, args...), &oldP); err != nil {
-			tx.Rollback()
-			return nil, err
-		}
-		if err := a.dbDelete(tx.Where(str, args...)); err != nil {
-			tx.Rollback()
-			return nil, err
-		}
 		if err := a.dbCreate(tx, &newP[i]); err != nil {
 			tx.Rollback()
 			return nil, err
